@@ -399,7 +399,7 @@
       ? '<span class="recover-badge mono">' + state.recoveryProgress + '/2 to green</span>'
       : '';
     return '<div class="statusbar">'
-      + '<span class="mono">' + clockStr(Date.now()) + '</span>'
+      + '<a href="./game.html" style="font-size:17px;line-height:1;text-decoration:none" title="Ponytail Flip mini-game">🐴</a>'
       + '<div class="left">'
         + '<button class="iconbtn ' + (state.alerts ? 'on' : '') + '" data-act="alerts" title="Alerts (sound + notification)">' + bell(state.alerts) + '</button>'
         + recoverBadge

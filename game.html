@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d11">
+  <title>Ponytail Flip — Mini Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: #0b0d11; color: #eef1f6;
+      font-family: 'Space Grotesk', sans-serif;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-font-smoothing: subpixel-antialiased;
+      user-select: none;
+    }
+
+    .app {
+      position: relative; width: 100%; max-width: 420px;
+      height: 100dvh; max-height: 920px;
+      background: #0b0d11; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    @media (min-width: 460px) and (min-height: 680px) {
+      .app {
+        height: min(880px, 96dvh); border-radius: 42px;
+        border: 8px solid #050608;
+        box-shadow: 0 30px 70px rgba(0,0,0,.6), inset 0 0 0 1px #1c2029;
+      }
+    }
+
+    /* ── header ── */
+    .topbar {
+      flex: none; display: flex; align-items: center;
+      justify-content: space-between; padding: 16px 22px 10px;
+    }
+    .topbar a {
+      font-size: 13px; color: #7e879a; text-decoration: none;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .topbar a:hover { color: #eef1f6; }
+    .game-title {
+      font-size: 15px; font-weight: 700; color: #5fe39a;
+      font-family: 'JetBrains Mono', monospace; letter-spacing: .06em;
+    }
+
+    /* ── score bar ── */
+    .scorebar {
+      flex: none; display: flex; gap: 10px; padding: 4px 16px 8px;
+    }
+    .score-card {
+      flex: 1; background: #15181f; border: 1px solid #272c36;
+      border-radius: 14px; padding: 10px 14px; text-align: center;
+    }
+    .score-card .label {
+      font-size: 10px; letter-spacing: .16em; color: #7e879a;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .score-card .val {
+      font-size: 24px; font-weight: 700; color: #eef1f6;
+      font-family: 'JetBrains Mono', monospace; line-height: 1.1; margin-top: 2px;
+    }
+    .score-card .val.accent { color: #5fe39a; }
+    .score-card .val.danger { color: #f2613f; }
+
+    /* ── arena ── */
+    .arena {
+      flex: 1; min-height: 0; position: relative;
+      margin: 0 16px; border-radius: 18px;
+      background: #15181f; border: 1px solid #272c36;
+      overflow: hidden;
+    }
+
+    /* targets */
+    .target {
+      position: absolute; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: transform .06s ease;
+      font-size: 22px; line-height: 1;
+    }
+    .target:active { transform: scale(.88); }
+    .target.normal {
+      background: radial-gradient(circle at 35% 35%, #5fe39a, #22a06b);
+      box-shadow: 0 0 14px rgba(95,227,154,.35);
+    }
+    .target.fast {
+      background: radial-gradient(circle at 35% 35%, #f3b13c, #d97a00);
+      box-shadow: 0 0 14px rgba(243,177,60,.35);
+    }
+    .target.hard {
+      background: radial-gradient(circle at 35% 35%, #f2613f, #b83420);
+      box-shadow: 0 0 14px rgba(242,97,63,.35);
+    }
+    .target.bonus {
+      background: radial-gradient(circle at 35% 35%, #b06eff, #7b35d6);
+      box-shadow: 0 0 14px rgba(176,110,255,.35);
+    }
+
+    @keyframes pop-in {
+      0%  { transform: scale(0) rotate(-20deg); opacity: 0; }
+      70% { transform: scale(1.15) rotate(4deg); opacity: 1; }
+      100%{ transform: scale(1) rotate(0); opacity: 1; }
+    }
+    @keyframes pop-out {
+      0%   { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+    .target.spawning { animation: pop-in .22s cubic-bezier(.34,1.56,.64,1) both; }
+    .target.dying    { animation: pop-out .15s ease both; pointer-events: none; }
+
+    /* shrink ring */
+    .target::after {
+      content: '';
+      position: absolute; inset: -5px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.18);
+      animation: shrink-ring linear both;
+    }
+    @keyframes shrink-ring {
+      0%   { inset: -5px; opacity: .9; }
+      80%  { inset: -1px; opacity: .6; }
+      100% { inset:  4px; opacity: 0; }
+    }
+
+    /* hit burst */
+    .burst {
+      position: absolute; pointer-events: none;
+      border-radius: 50%;
+      animation: burst .35s ease both;
+    }
+    @keyframes burst {
+      0%   { transform: scale(0); opacity: .8; }
+      60%  { transform: scale(2.2); opacity: .4; }
+      100% { transform: scale(3);   opacity: 0; }
+    }
+
+    /* score pop */
+    .score-pop {
+      position: absolute; pointer-events: none;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px; font-weight: 700;
+      animation: float-up .7s ease both;
+    }
+    @keyframes float-up {
+      0%   { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-54px); opacity: 0; }
+    }
+
+    /* miss flash */
+    .arena.miss-flash { animation: miss-flash .18s ease; }
+    @keyframes miss-flash {
+      0%,100% { background: #15181f; }
+      50%      { background: rgba(242,97,63,.14); }
+    }
+
+    /* ── footer ── */
+    .footer {
+      flex: none; padding: 12px 16px 20px;
+      display: flex; flex-direction: column; gap: 9px;
+    }
+    .btn {
+      width: 100%; border: none; border-radius: 14px;
+      padding: 15px; font-size: 15px; font-weight: 600;
+      font-family: 'Space Grotesk', sans-serif; cursor: pointer;
+    }
+    .btn.primary { background: #5fe39a; color: #07140c; }
+    .btn.ghost {
+      background: transparent; color: #7e879a;
+      border: 1px solid #272c36;
+    }
+    .btn:active { transform: translateY(1px); }
+
+    /* ── overlays ── */
+    .overlay {
+      position: absolute; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 28px; text-align: center;
+    }
+    .overlay.start {
+      background: radial-gradient(circle at 50% 30%, rgba(95,227,154,.12), #0b0d11 64%);
+    }
+    .overlay.end {
+      background: radial-gradient(circle at 50% 30%, rgba(242,97,63,.14), #0b0d11 64%);
+    }
+    .o-emoji { font-size: 70px; line-height: 1; }
+    .o-title {
+      margin-top: 16px; font-size: 26px; font-weight: 700; color: #eef1f6;
+    }
+    .o-sub { margin-top: 8px; font-size: 14px; color: #7e879a; }
+    .o-stats {
+      margin-top: 24px; width: 100%;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .o-stat {
+      display: flex; justify-content: space-between;
+      background: #15181f; border: 1px solid #272c36;
+      border-radius: 12px; padding: 12px 16px; font-size: 13px;
+    }
+    .o-stat .k { color: #7e879a; }
+    .o-stat .v { font-family: 'JetBrains Mono', monospace; color: #eef1f6; }
+    .o-stat .v.accent { color: #5fe39a; }
+    .o-actions {
+      margin-top: 24px; width: 100%;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* legend */
+    .legend {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      justify-content: center; margin-top: 20px;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: #7e879a;
+    }
+    .legend-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex: none;
+    }
+
+    .countdown-ring {
+      width: 90px; height: 90px; position: relative; margin-bottom: 14px;
+    }
+    .countdown-ring svg { transform: rotate(-90deg); }
+    .countdown-ring .num {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 32px; font-weight: 700; color: #f2613f;
+    }
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <a href="./index.html">‹ tasks</a>
+    <span class="game-title">PONYTAIL FLIP</span>
+    <span style="width:52px"></span>
+  </div>
+
+  <!-- Score bar -->
+  <div class="scorebar">
+    <div class="score-card">
+      <div class="label">SCORE</div>
+      <div class="val accent" id="score-display">0</div>
+    </div>
+    <div class="score-card">
+      <div class="label">COMBO</div>
+      <div class="val" id="combo-display">x1</div>
+    </div>
+    <div class="score-card">
+      <div class="label">TIME</div>
+      <div class="val danger" id="timer-display">30</div>
+    </div>
+  </div>
+
+  <!-- Arena -->
+  <div class="arena" id="arena"></div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn ghost" id="btn-best">Best: 0</button>
+  </div>
+
+  <!-- Start overlay -->
+  <div class="overlay start" id="overlay-start">
+    <div class="o-emoji">🐴</div>
+    <div class="o-title">Ponytail Flip</div>
+    <div class="o-sub">Tap the circles before they disappear.<br>Build combos for bigger scores!</div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#5fe39a"></div>+1</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f3b13c"></div>+2 fast</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f2613f"></div>+3 hard</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#b06eff"></div>+5 bonus</div>
+    </div>
+    <div class="o-actions">
+      <button class="btn primary" id="btn-start">Tap to Play</button>
+    </div>
+  </div>
+
+  <!-- End overlay (hidden) -->
+  <div class="overlay end" id="overlay-end" style="display:none">
+    <div class="o-emoji" id="end-emoji">🎉</div>
+    <div class="o-title" id="end-title">Time's up!</div>
+    <div class="o-sub" id="end-sub"></div>
+    <div class="o-stats">
+      <div class="o-stat">
+        <span class="k">Score</span>
+        <span class="v accent" id="end-score">0</span>
+      </div>
+      <div class="o-stat">
+        <span class="k">Best streak</span>
+        <span class="v" id="end-streak">0</span>
+      </div>
+      <div class="o-stat">
+        <span class="k">Targets hit</span>
+        <span class="v" id="end-hits">0</span>
+      </div>
+      <div class="o-stat">
+        <span class="k">All-time best</span>
+        <span class="v accent" id="end-best">0</span>
+      </div>
+    </div>
+    <div class="o-actions">
+      <button class="btn primary" id="btn-replay">Play Again</button>
+      <button class="btn ghost" id="btn-home">Back to Tasks</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+(function () {
+  const GAME_DURATION = 30; // seconds
+  const STORE_KEY = 'ponytail-flip.best';
+
+  const arena = document.getElementById('arena');
+  const scoreDisplay = document.getElementById('score-display');
+  const comboDisplay = document.getElementById('combo-display');
+  const timerDisplay = document.getElementById('timer-display');
+  const btnBest = document.getElementById('btn-best');
+  const overlayStart = document.getElementById('overlay-start');
+  const overlayEnd = document.getElementById('overlay-end');
+
+  let score = 0, combo = 1, bestCombo = 1, hits = 0;
+  let timeLeft = GAME_DURATION;
+  let running = false;
+  let spawnTimer = null, tickTimer = null;
+  let targets = []; // { id, el, timeout, points }
+  let best = parseInt(localStorage.getItem(STORE_KEY) || '0', 10);
+  let nextId = 0;
+
+  function updateBestBtn() {
+    btnBest.textContent = 'Best: ' + best;
+  }
+  updateBestBtn();
+
+  // ── Target config ──────────────────────────────────────────────────────────
+  // Each kind: { cls, points, minLife, maxLife, size, emoji, weight }
+  const KINDS = [
+    { cls: 'normal', points: 1, minLife: 1400, maxLife: 2200, size: 60, emoji: '🤍', weight: 45 },
+    { cls: 'fast',   points: 2, minLife: 900,  maxLife: 1400, size: 52, emoji: '⚡', weight: 30 },
+    { cls: 'hard',   points: 3, minLife: 650,  maxLife: 950,  size: 44, emoji: '🔥', weight: 18 },
+    { cls: 'bonus',  points: 5, minLife: 1100, maxLife: 1600, size: 56, emoji: '⭐', weight: 7  },
+  ];
+  const TOTAL_WEIGHT = KINDS.reduce((s, k) => s + k.weight, 0);
+
+  function pickKind() {
+    let r = Math.random() * TOTAL_WEIGHT;
+    for (const k of KINDS) { r -= k.weight; if (r <= 0) return k; }
+    return KINDS[0];
+  }
+
+  function spawnInterval() {
+    // Ramp up: start slow, get faster
+    const elapsed = GAME_DURATION - timeLeft;
+    const base = 1100 - elapsed * 18;
+    return Math.max(320, base + (Math.random() - .5) * 200);
+  }
+
+  function spawnTarget() {
+    const kind = pickKind();
+    const id = nextId++;
+    const arenaRect = arena.getBoundingClientRect();
+    const W = arenaRect.width  || 300;
+    const H = arenaRect.height || 400;
+    const pad = kind.size / 2 + 8;
+    const x = pad + Math.random() * (W - pad * 2);
+    const y = pad + Math.random() * (H - pad * 2);
+    const life = kind.minLife + Math.random() * (kind.maxLife - kind.minLife);
+
+    const el = document.createElement('div');
+    el.className = 'target ' + kind.cls + ' spawning';
+    el.style.cssText = [
+      'width:' + kind.size + 'px',
+      'height:' + kind.size + 'px',
+      'left:' + (x - kind.size / 2) + 'px',
+      'top:'  + (y - kind.size / 2) + 'px',
+    ].join(';');
+    el.textContent = kind.emoji;
+    el.style.setProperty('--life', life + 'ms');
+    el.querySelector && null; // no-op
+    el.style.setProperty('animation-duration', kind.cls === 'spawning' ? '.22s' : '');
+    // set shrink ring duration
+    el.style.cssText += ';--ring-dur:' + life + 'ms';
+    el.style.setProperty('--ring-dur', life + 'ms');
+
+    // Apply ring duration inline
+    const style = document.createElement('style');
+    style.textContent = '[data-tid="' + id + '"]::after { animation-duration: ' + life + 'ms; }';
+    document.head.appendChild(style);
+    el.dataset.tid = id;
+
+    arena.appendChild(el);
+
+    const timeoutId = setTimeout(() => expireTarget(id), life);
+    targets.push({ id, el, timeoutId, points: kind.points, styleEl: style });
+
+    el.addEventListener('pointerdown', ev => {
+      ev.preventDefault();
+      hitTarget(id, x, y, kind);
+    });
+  }
+
+  function removeTargetById(id) {
+    const idx = targets.findIndex(t => t.id === id);
+    if (idx === -1) return null;
+    const [rec] = targets.splice(idx, 1);
+    clearTimeout(rec.timeoutId);
+    if (rec.styleEl) rec.styleEl.remove();
+    return rec;
+  }
+
+  function hitTarget(id, x, y, kind) {
+    if (!running) return;
+    const rec = removeTargetById(id);
+    if (!rec) return;
+
+    rec.el.classList.remove('spawning');
+    rec.el.classList.add('dying');
+    setTimeout(() => rec.el.remove(), 160);
+
+    // combo & score
+    combo = Math.min(combo + 1, 8);
+    bestCombo = Math.max(bestCombo, combo);
+    const earned = rec.points * combo;
+    score += earned;
+    hits++;
+
+    scoreDisplay.textContent = score;
+    comboDisplay.textContent = 'x' + combo;
+    comboDisplay.style.color = combo >= 4 ? '#f3b13c' : combo >= 2 ? '#5fe39a' : '#eef1f6';
+
+    burst(x, y, kind.cls);
+    scorePop(x, y - 20, '+' + earned, kind.cls);
+  }
+
+  function expireTarget(id) {
+    const rec = removeTargetById(id);
+    if (!rec) return;
+    rec.el.classList.add('dying');
+    setTimeout(() => rec.el.remove(), 160);
+
+    // break combo
+    combo = 1;
+    comboDisplay.textContent = 'x1';
+    comboDisplay.style.color = '#eef1f6';
+
+    arena.classList.remove('miss-flash');
+    void arena.offsetWidth;
+    arena.classList.add('miss-flash');
+  }
+
+  function burst(x, y, kindCls) {
+    const colors = { normal: '#5fe39a', fast: '#f3b13c', hard: '#f2613f', bonus: '#b06eff' };
+    const el = document.createElement('div');
+    el.className = 'burst';
+    const sz = 48;
+    el.style.cssText = 'width:' + sz + 'px;height:' + sz + 'px;left:' + (x-sz/2) + 'px;top:' + (y-sz/2) + 'px;background:' + (colors[kindCls] || '#5fe39a');
+    arena.appendChild(el);
+    setTimeout(() => el.remove(), 360);
+  }
+
+  function scorePop(x, y, text, kindCls) {
+    const colors = { normal: '#5fe39a', fast: '#f3b13c', hard: '#f2613f', bonus: '#b06eff' };
+    const el = document.createElement('div');
+    el.className = 'score-pop';
+    el.style.cssText = 'left:' + x + 'px;top:' + y + 'px;color:' + (colors[kindCls] || '#5fe39a') + ';transform:translateX(-50%)';
+    el.textContent = text;
+    arena.appendChild(el);
+    setTimeout(() => el.remove(), 720);
+  }
+
+  // ── Game loop ──────────────────────────────────────────────────────────────
+  function startGame() {
+    score = 0; combo = 1; bestCombo = 1; hits = 0;
+    timeLeft = GAME_DURATION;
+    targets = []; nextId = 0;
+    running = true;
+
+    arena.innerHTML = '';
+    scoreDisplay.textContent = '0';
+    comboDisplay.textContent = 'x1';
+    comboDisplay.style.color = '#eef1f6';
+    timerDisplay.textContent = GAME_DURATION;
+    timerDisplay.style.color = '#f2613f';
+
+    overlayStart.style.display = 'none';
+    overlayEnd.style.display = 'none';
+
+    function scheduleSpawn() {
+      if (!running) return;
+      spawnTarget();
+      spawnTimer = setTimeout(scheduleSpawn, spawnInterval());
+    }
+    scheduleSpawn();
+
+    tickTimer = setInterval(() => {
+      timeLeft--;
+      timerDisplay.textContent = timeLeft;
+      if (timeLeft <= 5) timerDisplay.style.color = '#f2613f';
+      else if (timeLeft <= 10) timerDisplay.style.color = '#f3b13c';
+      if (timeLeft <= 0) endGame();
+    }, 1000);
+  }
+
+  function endGame() {
+    running = false;
+    clearTimeout(spawnTimer);
+    clearInterval(tickTimer);
+
+    // remove remaining targets
+    for (const rec of targets) {
+      clearTimeout(rec.timeoutId);
+      if (rec.styleEl) rec.styleEl.remove();
+      rec.el.classList.add('dying');
+      setTimeout(() => rec.el.remove(), 160);
+    }
+    targets = [];
+
+    if (score > best) {
+      best = score;
+      localStorage.setItem(STORE_KEY, String(best));
+      updateBestBtn();
+    }
+
+    document.getElementById('end-score').textContent = score;
+    document.getElementById('end-streak').textContent = bestCombo;
+    document.getElementById('end-hits').textContent = hits;
+    document.getElementById('end-best').textContent = best;
+
+    const isHighScore = score >= best && score > 0;
+    document.getElementById('end-emoji').textContent = isHighScore ? '🏆' : score > 20 ? '🎉' : '🎯';
+    document.getElementById('end-title').textContent = isHighScore ? 'New Record!' : 'Time\'s Up!';
+    document.getElementById('end-sub').textContent = isHighScore
+      ? 'You crushed your best score!'
+      : 'Best combo was x' + bestCombo + '.';
+
+    overlayEnd.style.display = '';
+  }
+
+  // ── Button handlers ───────────────────────────────────────────────────────
+  document.getElementById('btn-start').addEventListener('click', startGame);
+  document.getElementById('btn-replay').addEventListener('click', startGame);
+  document.getElementById('btn-home').addEventListener('click', () => {
+    window.location.href = './index.html';
+  });
+
+  // Prevent scroll/bounce in arena
+  arena.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+})();
+</script>
+</body>
+</html>
