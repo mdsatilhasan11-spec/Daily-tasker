@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0d11" />
+  <title>Fluid Ripples</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+  <style>
+    :root {
+      --bg:#0b0d11; --panel:rgba(21,24,31,.72); --panel-solid:#15181f; --border:rgba(255,255,255,.09);
+      --text:#eef1f6; --muted:#7e879a; --muted2:#aeb6c6;
+      --accent:#5fe39a; --accent-ink:#07140c;
+      --track:rgba(255,255,255,.12);
+      --r-card:18px; --r-btn:12px;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); }
+    body {
+      font:14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing:antialiased; -webkit-tap-highlight-color:transparent;
+      overscroll-behavior:none;
+    }
+
+    /* The sim runs on a small grid; the browser's bilinear upscale keeps it smooth. */
+    #surface {
+      position:fixed; inset:0; width:100vw; height:100vh; height:100dvh;
+      display:block; touch-action:none; cursor:crosshair;
+      image-rendering:auto;
+    }
+    .vignette {
+      position:fixed; inset:0; pointer-events:none;
+      background:radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.45) 100%);
+    }
+
+    .hint {
+      position:fixed; left:50%; top:max(18px, env(safe-area-inset-top)); transform:translateX(-50%);
+      padding:8px 14px; border-radius:999px; background:var(--panel); border:1px solid var(--border);
+      backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+      color:var(--muted2); font-size:13px; pointer-events:none; white-space:nowrap;
+      transition:opacity .6s ease, transform .6s ease;
+    }
+    .hint.gone { opacity:0; transform:translate(-50%, -8px); }
+
+    .panel {
+      position:fixed; left:max(16px, env(safe-area-inset-left)); bottom:max(16px, env(safe-area-inset-bottom));
+      width:300px; max-width:calc(100vw - 32px);
+      background:var(--panel); border:1px solid var(--border); border-radius:var(--r-card);
+      backdrop-filter:blur(18px) saturate(1.3); -webkit-backdrop-filter:blur(18px) saturate(1.3);
+      box-shadow:0 18px 50px rgba(0,0,0,.4);
+      user-select:none; -webkit-user-select:none;
+      transition:transform .35s cubic-bezier(.2,.8,.2,1);
+    }
+    .panel-head {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      padding:12px 12px 12px 16px;
+    }
+    .panel-head h1 { font-size:14px; font-weight:650; letter-spacing:.01em; }
+    .icon-btn {
+      width:32px; height:32px; border-radius:10px; border:1px solid var(--border);
+      background:transparent; color:var(--muted2); cursor:pointer;
+      display:grid; place-items:center;
+    }
+    .icon-btn:hover { color:var(--text); background:rgba(255,255,255,.05); }
+    .icon-btn svg { width:16px; height:16px; transition:transform .3s ease; }
+    .panel.collapsed .icon-btn svg { transform:rotate(180deg); }
+
+    .panel-body { padding:0 16px 16px; display:grid; gap:16px; }
+    .panel.collapsed .panel-body { display:none; }
+
+    .field { display:grid; gap:8px; }
+    .field-top { display:flex; justify-content:space-between; align-items:baseline; }
+    .field label, .field .label { font-size:12px; color:var(--muted2); font-weight:550; letter-spacing:.02em; }
+    .field output { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+    input[type=range] {
+      -webkit-appearance:none; appearance:none; width:100%; height:22px; background:transparent; cursor:pointer;
+      --p:50%;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height:4px; border-radius:4px;
+      background:linear-gradient(to right, var(--accent) var(--p), var(--track) var(--p));
+    }
+    input[type=range]::-moz-range-track { height:4px; border-radius:4px; background:var(--track); }
+    input[type=range]::-moz-range-progress { height:4px; border-radius:4px; background:var(--accent); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance:none; width:18px; height:18px; margin-top:-7px; border-radius:50%;
+      background:var(--text); border:none; box-shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+    input[type=range]::-moz-range-thumb {
+      width:18px; height:18px; border-radius:50%; background:var(--text); border:none;
+      box-shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+    input[type=range]:focus-visible { outline:2px solid var(--accent); outline-offset:4px; border-radius:6px; }
+
+    .maps { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+    .map-btn {
+      display:grid; gap:6px; padding:6px; border-radius:var(--r-btn);
+      border:1px solid var(--border); background:transparent; color:var(--muted2);
+      font:inherit; font-size:11px; cursor:pointer;
+    }
+    .map-btn .sw { height:18px; border-radius:6px; }
+    .map-btn:hover { color:var(--text); background:rgba(255,255,255,.04); }
+    .map-btn[aria-pressed=true] { border-color:var(--accent); color:var(--text); }
+    .map-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+    .clear-btn {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      height:40px; border-radius:var(--r-btn); border:none; cursor:pointer;
+      background:var(--accent); color:var(--accent-ink); font:inherit; font-weight:650;
+    }
+    .clear-btn:hover { filter:brightness(1.07); }
+    .clear-btn:active { transform:scale(.98); }
+    .clear-btn:focus-visible { outline:2px solid var(--text); outline-offset:2px; }
+    .clear-btn svg { width:16px; height:16px; }
+    kbd {
+      font:inherit; font-size:11px; padding:1px 6px; border-radius:5px;
+      background:rgba(0,0,0,.15); border:1px solid rgba(0,0,0,.18);
+    }
+
+    @media (max-width:520px) {
+      .panel { left:16px; right:16px; width:auto; }
+      .hint { font-size:12px; }
+      kbd { display:none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="surface" aria-label="Fluid surface. Drag to make ripples."></canvas>
+  <div class="vignette"></div>
+  <div class="hint" id="hint">Drag anywhere to disturb the surface</div>
+
+  <section class="panel" id="panel" aria-label="Simulation controls">
+    <div class="panel-head">
+      <h1>Fluid Ripples</h1>
+      <button class="icon-btn" id="toggle" aria-expanded="true" aria-controls="panelBody" title="Hide controls (H)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+    <div class="panel-body" id="panelBody">
+      <div class="field">
+        <div class="field-top"><label for="viscosity">Viscosity</label><output id="viscosityOut"></output></div>
+        <input type="range" id="viscosity" min="0" max="100" step="1" />
+      </div>
+      <div class="field">
+        <div class="field-top"><label for="strength">Wave strength</label><output id="strengthOut"></output></div>
+        <input type="range" id="strength" min="0" max="100" step="1" />
+      </div>
+      <div class="field">
+        <span class="label" id="mapLabel">Color map</span>
+        <div class="maps" id="maps" role="group" aria-labelledby="mapLabel"></div>
+      </div>
+      <button class="clear-btn" id="clear">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        Clear surface <kbd>C</kbd>
+      </button>
+    </div>
+  </section>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Color maps ----------
+  // Each map is a list of stops; the rest level sits near REST in the LUT so
+  // crests brighten and troughs darken.
+  const MAPS = {
+    ocean:  { name:'Ocean',  stops:['#01060f','#041d3a','#0a4a80','#1b86c2','#62c9e6','#e8fbff'] },
+    aurora: { name:'Aurora', stops:['#030608','#062622','#0d5b4a','#1fae7a','#5fe39a','#e4ffef'] },
+    magma:  { name:'Magma',  stops:['#000004','#2a0b52','#721f81','#c83e73','#f7845e','#fcfdbf'] },
+    mono:   { name:'Mono',   stops:['#050608','#15181f','#353b48','#7e879a','#c9ced8','#ffffff'] },
+  };
+  const REST = 0.3;           // LUT position of the flat surface
+  const LUT_SIZE = 512;
+
+  function hexToRgb(h) {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function buildLut(stops) {
+    const rgb = stops.map(hexToRgb);
+    const lut = new Float32Array(LUT_SIZE * 3);
+    for (let i = 0; i < LUT_SIZE; i++) {
+      const t = i / (LUT_SIZE - 1) * (rgb.length - 1);
+      const k = Math.min(rgb.length - 2, Math.floor(t));
+      const f = t - k;
+      const s = f * f * (3 - 2 * f); // smoothstep between stops
+      for (let c = 0; c < 3; c++) lut[i * 3 + c] = rgb[k][c] + (rgb[k + 1][c] - rgb[k][c]) * s;
+    }
+    return lut;
+  }
+
+  // ---------- Settings ----------
+  const DEFAULTS = { viscosity:22, strength:60, map:'ocean' };
+  const STORE_KEY = 'fluid-ripples-settings';
+  let settings = { ...DEFAULTS };
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved && typeof saved === 'object') {
+      if (Number.isFinite(saved.viscosity)) settings.viscosity = saved.viscosity;
+      if (Number.isFinite(saved.strength)) settings.strength = saved.strength;
+      if (saved.map in MAPS) settings.map = saved.map;
+    }
+  } catch (_) {}
+  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(settings)); } catch (_) {} }
+
+  let lut = buildLut(MAPS[settings.map].stops);
+
+  // ---------- Simulation grid ----------
+  const canvas = document.getElementById('surface');
+  const ctx = canvas.getContext('2d', { alpha:false });
+  let W = 0, H = 0, cell = 1;          // grid size (with 1-cell border) and CSS px per cell
+  let h, v, image, pixels;             // height, velocity, output
+
+  const TARGET_CELLS = matchMedia('(pointer:coarse)').matches ? 90000 : 200000;
+
+  function resize() {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const nextCell = Math.max(1.5, Math.sqrt(vw * vh / TARGET_CELLS));
+    const nW = Math.ceil(vw / nextCell) + 2;
+    const nH = Math.ceil(vh / nextCell) + 2;
+    if (nW === W && nH === H) return;
+
+    const nh = new Float32Array(nW * nH), nv = new Float32Array(nW * nH);
+    if (h) { // carry the current waves across the resize (nearest sample)
+      for (let y = 1; y < nH - 1; y++) {
+        const sy = Math.min(H - 2, Math.max(1, Math.round(y * (H - 1) / (nH - 1))));
+        for (let x = 1; x < nW - 1; x++) {
+          const sx = Math.min(W - 2, Math.max(1, Math.round(x * (W - 1) / (nW - 1))));
+          nh[y * nW + x] = h[sy * W + sx];
+          nv[y * nW + x] = v[sy * W + sx];
+        }
+      }
+    }
+    W = nW; H = nH; cell = nextCell; h = nh; v = nv;
+    canvas.width = W - 2; canvas.height = H - 2;
+    image = ctx.createImageData(W - 2, H - 2);
+    pixels = new Uint32Array(image.data.buffer);
+  }
+
+  // Semi-implicit wave equation: v += c²∇²h + μ∇²v, v *= damping, h += v.
+  // The 9-point Laplacian keeps rings round instead of diamond-shaped; the μ∇²v
+  // (Kelvin–Voigt) term damps short wavelengths fastest, which is what makes
+  // high viscosity feel thick rather than just quieter. Stable for C2 < 0.75, μ < 0.37.
+  const C2 = 0.5;
+  function step(damp, mu) {
+    const w = W, hh = h, vv = v;
+    for (let y = 1; y < H - 1; y++) {
+      let i = y * w + 1;
+      for (let end = i + w - 2; i < end; i++) {
+        const lap = (4 * (hh[i - 1] + hh[i + 1] + hh[i - w] + hh[i + w])
+          + hh[i - w - 1] + hh[i - w + 1] + hh[i + w - 1] + hh[i + w + 1] - 20 * hh[i]) / 6;
+        const lapV = (4 * (vv[i - 1] + vv[i + 1] + vv[i - w] + vv[i + w])
+          + vv[i - w - 1] + vv[i - w + 1] + vv[i + w - 1] + vv[i + w + 1] - 20 * vv[i]) / 6;
+        vv[i] = (vv[i] + lap * C2 + lapV * mu) * damp;
+      }
+    }
+    for (let y = 1; y < H - 1; y++) {
+      let i = y * w + 1;
+      for (let end = i + w - 2; i < end; i++) hh[i] = (hh[i] + vv[i]) * 0.9996;
+    }
+  }
+
+  // Raised-cosine splat centred on a grid point; negative amp pushes the surface down.
+  function splat(gx, gy, radius, amp) {
+    const r2 = radius * radius;
+    const x0 = Math.max(1, Math.floor(gx - radius)), x1 = Math.min(W - 2, Math.ceil(gx + radius));
+    const y0 = Math.max(1, Math.floor(gy - radius)), y1 = Math.min(H - 2, Math.ceil(gy + radius));
+    for (let y = y0; y <= y1; y++) {
+      const dy = y - gy;
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - gx, d2 = dx * dx + dy * dy;
+        if (d2 >= r2) continue;
+        h[y * W + x] += amp * 0.5 * (1 + Math.cos(Math.PI * Math.sqrt(d2 / r2)));
+      }
+    }
+  }
+
+  // ---------- Rendering ----------
+  const LIGHT_X = -0.55, LIGHT_Y = -0.75;  // light from the top-left
+  const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+  function render() {
+    const w = W, hh = h, px = pixels, L = lut;
+    const pw = W - 2;
+    const heightGain = 0.8;          // LUT units per height unit
+    const slopeGain = 7;
+    const last = LUT_SIZE - 1;
+    for (let y = 1; y < H - 1; y++) {
+      let i = y * w + 1, o = (y - 1) * pw;
+      for (let end = i + w - 2; i < end; i++, o++) {
+        const gx = hh[i + 1] - hh[i - 1];
+        const gy = hh[i + w] - hh[i - w];
+        const lit = (gx * LIGHT_X + gy * LIGHT_Y) * slopeGain;
+
+        let t = REST + hh[i] * heightGain * 0.01 + lit * 0.012;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const k = ((t * last) | 0) * 3;
+
+        // Specular glint on slopes facing the light, plus diffuse shading.
+        let spec = lit > 0.5 ? (lit - 0.5) * 30 : 0;
+        if (spec > 70) spec = 70;
+        const shade = 1 + (lit > 0 ? lit * 0.05 : lit * 0.08);
+
+        let r = L[k] * shade + spec, g = L[k + 1] * shade + spec, b = L[k + 2] * shade + spec;
+        r = r > 255 ? 255 : r < 0 ? 0 : r;
+        g = g > 255 ? 255 : g < 0 ? 0 : g;
+        b = b > 255 ? 255 : b < 0 ? 0 : b;
+        px[o] = littleEndian
+          ? (0xff000000 | (b << 16) | (g << 8) | r)
+          : ((r << 24) | (g << 16) | (b << 8) | 0xff);
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  // ---------- Input ----------
+  const pointers = new Map(); // pointerId -> { x, y } in grid coords
+  const hint = document.getElementById('hint');
+  let hintShown = true;
+
+  function toGrid(e) {
+    return { x: e.clientX / cell + 1, y: e.clientY / cell + 1 };
+  }
+  function brushRadius() { return Math.max(3, 22 / cell); }
+  function strengthScale() { return 0.15 + (settings.strength / 100) * 1.85; }
+
+  // Stamp evenly along the segment so fast drags leave a continuous wake
+  // rather than a row of dots; energy scales with distance travelled.
+  function stroke(a, b) {
+    const r = brushRadius();
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-3) return;
+    const spacing = r * 0.3;
+    const n = Math.max(1, Math.ceil(dist / spacing));
+    const speed = Math.min(dist / r, 4);
+    const amp = -(2.5 + speed * 2) * strengthScale() * (dist / n) / spacing;
+    for (let s = 1; s <= n; s++) splat(a.x + dx * s / n, a.y + dy * s / n, r, amp);
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId);
+    const p = toGrid(e);
+    pointers.set(e.pointerId, p);
+    splat(p.x, p.y, brushRadius() * 1.3, -28 * strengthScale());
+    if (hintShown) { hint.classList.add('gone'); hintShown = false; }
+  });
+  canvas.addEventListener('pointermove', e => {
+    const prev = pointers.get(e.pointerId);
+    if (!prev) return;
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    let last = prev;
+    for (const ce of (events.length ? events : [e])) {
+      const p = toGrid(ce);
+      stroke(last, p);
+      last = p;
+    }
+    pointers.set(e.pointerId, last);
+  });
+  const release = e => pointers.delete(e.pointerId);
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('lostpointercapture', release);
+
+  // ---------- Loop ----------
+  const STEP_MS = 1000 / 120;  // fixed physics rate, independent of display Hz
+  let acc = 0, lastT = performance.now(), fade = 0;
+
+  function frame(now) {
+    acc += Math.min(now - lastT, 100);
+    lastT = now;
+    // Viscosity 0..100 → per-step velocity damping.
+    const visc = settings.viscosity / 100;
+    const damp = 1 - (0.001 + Math.pow(visc, 1.8) * 0.035);
+    const mu = 0.02 + visc * 0.26;
+    let steps = 0;
+    while (acc >= STEP_MS && steps < 4) {
+      step(damp, mu);
+      if (fade > 0) {
+        for (let i = 0; i < h.length; i++) { h[i] *= 0.86; v[i] *= 0.86; }
+        if (--fade === 0) { h.fill(0); v.fill(0); }
+      }
+      acc -= STEP_MS; steps++;
+    }
+    if (steps === 4) acc = 0;
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function clearSurface() { fade = 24; } // eases the surface flat over ~0.2s
+
+  // ---------- Controls ----------
+  const viscosity = document.getElementById('viscosity');
+  const strength = document.getElementById('strength');
+  const viscosityOut = document.getElementById('viscosityOut');
+  const strengthOut = document.getElementById('strengthOut');
+  const mapsEl = document.getElementById('maps');
+  const panel = document.getElementById('panel');
+  const toggle = document.getElementById('toggle');
+
+  function paintRange(input) { input.style.setProperty('--p', input.value + '%'); }
+  function viscosityLabel(val) {
+    return val < 15 ? 'Water-thin' : val < 40 ? 'Water' : val < 65 ? 'Syrup' : val < 85 ? 'Honey' : 'Tar';
+  }
+  function syncControls() {
+    viscosity.value = settings.viscosity;
+    strength.value = settings.strength;
+    viscosityOut.textContent = viscosityLabel(settings.viscosity);
+    strengthOut.textContent = settings.strength + '%';
+    paintRange(viscosity); paintRange(strength);
+    for (const btn of mapsEl.children) btn.setAttribute('aria-pressed', String(btn.dataset.map === settings.map));
+  }
+
+  for (const [key, m] of Object.entries(MAPS)) {
+    const btn = document.createElement('button');
+    btn.className = 'map-btn';
+    btn.dataset.map = key;
+    btn.innerHTML = `<span class="sw" style="background:linear-gradient(90deg,${m.stops.join(',')})"></span>${m.name}`;
+    btn.addEventListener('click', () => {
+      settings.map = key;
+      lut = buildLut(m.stops);
+      syncControls(); save();
+    });
+    mapsEl.appendChild(btn);
+  }
+
+  viscosity.addEventListener('input', () => { settings.viscosity = +viscosity.value; syncControls(); save(); });
+  strength.addEventListener('input', () => { settings.strength = +strength.value; syncControls(); save(); });
+  document.getElementById('clear').addEventListener('click', clearSurface);
+
+  function setCollapsed(c) {
+    panel.classList.toggle('collapsed', c);
+    toggle.setAttribute('aria-expanded', String(!c));
+    toggle.title = c ? 'Show controls (H)' : 'Hide controls (H)';
+  }
+  toggle.addEventListener('click', () => setCollapsed(!panel.classList.contains('collapsed')));
+
+  window.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'c' || e.key === 'C') clearSurface();
+    else if (e.key === 'h' || e.key === 'H') setCollapsed(!panel.classList.contains('collapsed'));
+  });
+
+  window.addEventListener('resize', resize);
+
+  resize();
+  syncControls();
+  // A single opening drop so the surface isn't blank on load.
+  splat(W / 2, H / 2, brushRadius() * 1.6, -40);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
