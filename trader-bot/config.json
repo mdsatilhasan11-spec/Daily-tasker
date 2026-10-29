@@ -1,0 +1,14 @@
+{
+  "mode": "paper",
+  "symbol": "BTCUSD",
+  "timeframe": "1hr",
+  "starting_cash": 10000,
+  "position_pct": 50,
+  "fast_sma": 20,
+  "slow_sma": 50,
+  "stop_loss_pct": 3,
+  "take_profit_pct": 6,
+  "fee_pct": 0.4,
+  "slippage_pct": 0.05,
+  "poll_seconds": 60
+}

@@ -1,3 +1,7 @@
 node_modules/
 package-lock.json
 package.json
+trader-bot/state.json
+trader-bot/state.json.tmp
+trader-bot/trades.csv
+__pycache__/
